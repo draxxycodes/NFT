@@ -48,8 +48,9 @@ export default function RootLayout({
             </Link>
             {/* Desktop Nav */}
             <div className="hidden md:flex gap-4 text-sm">
-              <Link href="/#learn" className="hover:underline">Learn</Link>
-              <Link href="/#mint" className="hover:underline">Mint</Link>
+              <Link href="/" className="hover:underline">Home</Link>
+              <Link href="/explore" className="hover:underline">Explore</Link>
+              <Link href="/collections" className="hover:underline">Collections</Link>
               <Link href="/vault" className="hover:underline">My Vault</Link>
             </div>
             {/* Mobile Nav */}
@@ -62,8 +63,9 @@ export default function RootLayout({
                 </SheetTrigger>
                 <SheetContent side="right" className="w-72">
                   <div className="mt-8 grid gap-4 text-base">
-                    <Link href="/#learn" className="hover:underline">Learn</Link>
-                    <Link href="/#mint" className="hover:underline">Mint</Link>
+                    <Link href="/" className="hover:underline">Home</Link>
+                    <Link href="/explore" className="hover:underline">Explore</Link>
+                    <Link href="/collections" className="hover:underline">Collections</Link>
                     <Link href="/vault" className="hover:underline">My Vault</Link>
                   </div>
                 </SheetContent>
