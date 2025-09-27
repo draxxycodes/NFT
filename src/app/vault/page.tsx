@@ -1,252 +1,307 @@
 "use client";
 
-import { useEffect, useMemo, useState, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
-import { Grid3X3, Search, Box } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
+import { Box, Grid3X3, Loader2 } from "lucide-react";
 
 const STORAGE_KEY = "storymint_nfts";
-const EMPTY_IMG = "https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/object/public/project-uploads/72578d18-4c28-4032-9a62-d9e4e894b6b4/generated_images/cozy-storybook-shelf-with-empty-frames-a-ec4fd90a-20250927092458.jpg?";
 
-const SAMPLE_NFTS = [
-  {
-    id: "sample-1",
-    name: "Aurora Voyager",
-    image:
-      "https://images.unsplash.com/photo-1521120413309-4c882b41a803?auto=format&fit=crop&w=800&q=80",
-    description: "A luminous traveler collecting stories from the World Chain galaxy.",
-    txHash: "0xsampler111",
-    owner: "0xsampler",
-    timestamp: Date.now() - 1000 * 60 * 60 * 5,
-    collection: "World Chain Originals",
-  },
-  {
-    id: "sample-2",
-    name: "Neon Chronicle",
-    image:
-      "https://images.unsplash.com/photo-1542751110-97427bbecf20?auto=format&fit=crop&w=800&q=80",
-    description: "An evolving ledger of memories rendered in iridescent light.",
-    txHash: "0xsampler222",
-    owner: "0xsampler",
-    timestamp: Date.now() - 1000 * 60 * 30,
-    collection: "World Chain Originals",
-  },
-  {
-    id: "sample-3",
-    name: "Celestial Sojourner",
-    image:
-      "https://images.unsplash.com/photo-1516110833967-57885a279c8b?auto=format&fit=crop&w=800&q=80",
-    description: "A guardian spirit mapping constellations of on-chain lore.",
-    txHash: "0xsampler333",
-    owner: "0xsampler",
-    timestamp: Date.now() - 1000 * 60 * 5,
-    collection: "Starfall Archives",
-  },
-];
+type ExplorerNFT = {
+  id: string;
+  name: string;
+  image: string;
+  description?: string;
+  txHash?: string;
+  owner: string;
+  timestamp: number;
+  collection?: string;
+};
+
+type SortKey = "recent" | "oldest" | "name";
+
+async function fetchWalletNfts(address: string | null): Promise<ExplorerNFT[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const stored = raw ? (JSON.parse(raw) as ExplorerNFT[]) : [];
+    if (!address) {
+      return stored.filter((item) => (item.owner ?? "").toLowerCase() === "guest");
+    }
+    const normalized = address.toLowerCase();
+    return stored.filter((item) => (item.owner ?? "").toLowerCase() === normalized);
+  } catch (error) {
+    console.error("Failed to read local NFTs", error);
+    return [];
+  }
+}
+
+function formatWalletLabel(address: string | null) {
+  if (!address) return "Guest session (local mints)";
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
 
 function VaultContent() {
   const params = useSearchParams();
   const router = useRouter();
-  const [items, setItems] = useState<any[]>([]);
   const [account, setAccount] = useState<string | null>(null);
-  const [walletInput, setWalletInput] = useState("");
+  const [nfts, setNfts] = useState<ExplorerNFT[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("recent");
 
-  useEffect(() => {
-    // load NFTs
+  const loadNfts = useCallback(async (address: string | null) => {
+    setIsLoading(true);
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const all = raw ? (JSON.parse(raw) as any[]) : [];
-      setItems(all);
-    } catch {
-      setItems([]);
+      // When the World Chain MiniKit is wired in, replace this call with the remote fetcher.
+      const data = await fetchWalletNfts(address);
+      setNfts(data);
+    } catch (error) {
+      console.error("Unable to load NFTs", error);
+      toast.error("We couldn\'t load your NFTs. Please try again.");
+      setNfts([]);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const queryFlag = params.get("justMinted");
+    if (queryFlag === "1") {
+      toast.success("Your mint has been added to the Explorer.");
+      loadNfts(account);
+    }
+  }, [account, loadNfts, params]);
+
+  useEffect(() => {
+    loadNfts(account);
+  }, [account, loadNfts]);
 
   useEffect(() => {
     const anyWindow = window as any;
-    async function getAcc() {
-      if (!anyWindow?.ethereum?.request) return;
+    async function detectExisting() {
+      if (!anyWindow?.ethereum?.request) {
+        await loadNfts(null);
+        return;
+      }
       try {
         const accs: string[] = await anyWindow.ethereum.request({ method: "eth_accounts" });
-        if (accs && accs.length > 0) setAccount(accs[0]);
-      } catch {}
+        if (accs && accs.length > 0) {
+          setAccount(accs[0]);
+        } else {
+          await loadNfts(null);
+        }
+      } catch (error) {
+        console.error("Wallet detection failed", error);
+        await loadNfts(null);
+      }
     }
-    getAcc();
+    void detectExisting();
+  }, [loadNfts]);
+
+  const connectWallet = useCallback(async () => {
+    const anyWindow = window as any;
+    if (!anyWindow?.ethereum?.request) {
+      toast.info("No compatible wallet found. World ID connection will be available soon.");
+      return;
+    }
+    setIsConnecting(true);
+    try {
+      const accounts: string[] = await anyWindow.ethereum.request({ method: "eth_requestAccounts" });
+      if (!accounts?.length) {
+        toast.info("Wallet connection was closed.");
+        return;
+      }
+      const primary = accounts[0];
+      setAccount(primary);
+      toast.success("Wallet connected");
+    } catch (error) {
+      console.error("Wallet connection failed", error);
+      toast.error("Could not connect the wallet. Please try again.");
+    } finally {
+      setIsConnecting(false);
+    }
   }, []);
 
-  const filtered = useMemo(() => {
-    if (!account) {
-      // show guest mints if no wallet
-      return items.filter((i) => i.owner === "guest");
+  const refreshNfts = useCallback(async () => {
+    await loadNfts(account);
+    toast.success("Explorer refreshed");
+  }, [account, loadNfts]);
+
+  const disconnectWallet = useCallback(async () => {
+    setAccount(null);
+    await loadNfts(null);
+    toast.info("Disconnected. Showing guest session mints.");
+  }, [loadNfts]);
+
+  const sortedNfts = useMemo(() => {
+    const data = [...nfts];
+    switch (sortKey) {
+      case "name":
+        return data.sort((a, b) => a.name.localeCompare(b.name));
+      case "oldest":
+        return data.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      case "recent":
+      default:
+        return data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     }
-    return items.filter((i) => i.owner?.toLowerCase() === account.toLowerCase());
-  }, [items, account]);
+  }, [nfts, sortKey]);
 
   const stats = useMemo(() => {
-    const total = filtered.length;
+    const total = nfts.length;
     const collections = new Set(
-      filtered.map((item) => (item.collection ?? item.collectionName ?? "Uncategorized"))
+      nfts.map((item) => item.collection || "Uncategorized")
     );
-    const lastUpdatedTimestamp = filtered.reduce(
-      (latest, item) => Math.max(latest, Number(item.timestamp) || 0),
+    const lastTimestamp = nfts.reduce(
+      (acc, item) => Math.max(acc, Number(item.timestamp) || 0),
       0
     );
     return {
       total,
-      collections: total ? collections.size : 0,
-      lastUpdated: lastUpdatedTimestamp
-        ? new Date(lastUpdatedTimestamp).toLocaleString()
-        : "—",
+      collections: collections.size,
+      lastUpdated: lastTimestamp ? new Date(lastTimestamp).toLocaleString() : "—",
     };
-  }, [filtered]);
+  }, [nfts]);
 
-  useEffect(() => {
-    if (params.get("justMinted") === "1") {
-      toast.success("Hooray! Your first NFT is here.");
-    }
-  }, [params]);
-
-  const handleLoadWallet = () => {
-    const trimmed = walletInput.trim();
-    if (!trimmed) {
-      toast.error("Enter a wallet address to load NFTs.");
-      return;
-    }
-    setAccount(trimmed);
-    toast.success("Wallet connected.");
-  };
-
-  const handleUseSample = () => {
-    setItems(SAMPLE_NFTS);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(SAMPLE_NFTS));
-    setAccount("0xsampler");
-    setWalletInput("0xsampler");
-    toast.success("Loaded sample World Chain NFTs.");
-  };
+  const hasResults = sortedNfts.length > 0;
 
   return (
-    <main className="min-h-[100dvh] bg-gradient-to-b from-[#080b1c] via-[#0b0f27] to-[#050713] text-white">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-10 sm:py-14">
-        <header className="flex items-center justify-between">
+    <main className="min-h-[100dvh] pb-16 pt-12">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4">
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid size-11 place-items-center rounded-2xl border border-white/10 bg-white/5 backdrop-blur">
-              <Grid3X3 className="size-5 text-white/80" />
+            <div className="grid h-12 w-12 place-items-center rounded-2xl border border-sky-100/60 bg-white/70 shadow-sm">
+              <Grid3X3 className="h-5 w-5 text-sky-700" />
             </div>
             <div>
-              <p className="text-sm uppercase tracking-[0.28em] text-white/40">Dashboard</p>
-              <h1 className="text-lg font-semibold text-white">NFT.E</h1>
+              <p className="text-xs uppercase tracking-[0.32em] text-sky-600/70" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                Explorer
+              </p>
+              <h1 className="text-3xl text-slate-900" style={{ fontFamily: 'Chewy, system-ui, sans-serif' }}>
+                Nexplorer Vault
+              </h1>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-10 rounded-xl border border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-            aria-label="Search NFTs"
-          >
-            <Search className="size-5" />
-          </Button>
         </header>
 
-        <Card className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.04] p-6 shadow-[0_40px_120px_rgba(8,11,28,0.55)] backdrop-blur-xl sm:p-8">
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-2xl font-semibold text-white sm:text-3xl">Your NFT Collection</h2>
-              <p className="mt-2 text-sm text-white/60 sm:text-base">
-                Explore and manage your World Chain NFTs
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 sm:p-5">
-              <label className="text-xs uppercase tracking-[0.28em] text-white/40">World Chain wallet address</label>
-              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Input
-                  value={walletInput}
-                  onChange={(event) => setWalletInput(event.target.value)}
-                  placeholder="0x..."
-                  className="h-11 flex-1 rounded-xl border-white/10 bg-black/40 text-white placeholder:text-white/30"
-                />
-                <div className="flex w-full gap-3 sm:w-auto">
-                  <Button
-                    onClick={handleUseSample}
-                    className="flex-1 rounded-xl bg-white text-black hover:bg-white/90 sm:flex-none"
-                  >
-                    Use sample
-                  </Button>
-                  <Button
-                    onClick={handleLoadWallet}
-                    disabled={!walletInput.trim()}
-                    className={cn(
-                      "flex-1 rounded-xl border border-white/10 bg-white/10 text-white/70 hover:bg-white/20",
-                      !walletInput.trim() && "cursor-not-allowed opacity-60"
-                    )}
-                  >
-                    Load NFTs
-                  </Button>
-                </div>
+        <Card className="rounded-3xl border border-sky-100/70 bg-white/85 p-6 shadow-lg backdrop-blur">
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-sky-600/80" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                  Connected wallet
+                </p>
+                <h2 className="mt-1 text-2xl text-slate-900" style={{ fontFamily: 'Chewy, system-ui, sans-serif' }}>
+                  {formatWalletLabel(account)}
+                </h2>
+                <p className="mt-1 text-sm text-slate-600" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                  NFTs load automatically after a successful World ID / wallet connection. You can refresh anytime as you integrate the World Chain MiniKit.
+                </p>
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 rounded-2xl border border-white/10 bg-black/10 p-4 sm:grid-cols-3">
-              {[{ label: "Total NFTs", value: stats.total }, { label: "Collections", value: stats.collections }, { label: "Last Updated", value: stats.lastUpdated }].map((stat) => (
-                <div key={stat.label} className="space-y-1">
-                  <p className="text-xs uppercase tracking-[0.3em] text-white/30">{stat.label}</p>
-                  <p className="text-lg font-semibold text-white sm:text-xl">{stat.value}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="grid place-items-center gap-3 py-10 text-center text-white/70">
-              <div className="grid size-16 place-items-center rounded-full border border-white/10 bg-white/5">
-                <Box className="size-7" />
-              </div>
-              {filtered.length === 0 ? (
-                <>
-                  <h3 className="text-lg font-medium text-white sm:text-xl">Connect your wallet</h3>
-                  <p className="max-w-sm text-sm text-white/60">
-                    Connect your wallet to explore your World Chain NFT collection, or check back later
-                    as you acquire new NFTs.
-                  </p>
+              <div className="flex flex-wrap items-center gap-3">
+                {account ? (
                   <Button
                     variant="secondary"
-                    className="rounded-xl border border-white/20 bg-white/10 text-white hover:bg-white/20"
-                    onClick={() => router.push("/#mint")}
+                    className="rounded-full border border-sky-200 bg-sky-50 px-5 text-sky-800 hover:bg-sky-100"
+                    style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}
+                    onClick={disconnectWallet}
                   >
-                    Mint your first NFT
+                    Disconnect
                   </Button>
-                </>
-              ) : (
-                <>
-                  <h3 className="text-lg font-medium text-white sm:text-xl">{account ? `Wallet: ${account}` : "Guest collection"}</h3>
-                  <p className="max-w-sm text-sm text-white/60">
-                    Keep exploring World Chain drops, and return here to see your collection grow in real time.
+                ) : null}
+                <Button
+                  className="rounded-full bg-yellow-400 px-6 text-slate-900 hover:bg-yellow-300"
+                  style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}
+                  onClick={account ? refreshNfts : connectWallet}
+                  disabled={isConnecting}
+                >
+                  {isConnecting ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Connecting
+                    </span>
+                  ) : account ? (
+                    "Refresh NFTs"
+                  ) : (
+                    "Connect wallet"
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-sky-100/70 bg-white/70 p-4">
+              <div className="flex flex-col gap-4 sm:grid sm:grid-cols-3">
+                {[{ label: "Total NFTs", value: stats.total }, { label: "Collections", value: stats.collections }, { label: "Last updated", value: stats.lastUpdated }].map((stat) => (
+                  <div key={stat.label} className="space-y-1">
+                  <p className="text-[0.65rem] uppercase tracking-[0.24em] text-slate-500" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                    {stat.label}
                   </p>
-                </>
-              )}
+                  <p className="text-base font-semibold leading-tight text-slate-900" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                    {stat.value}
+                  </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4 rounded-2xl border border-sky-100/70 bg-sky-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-slate-700" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                  Choose how you want your collection sorted. Additional filters can plug into this panel when on-chain metadata is available.
+                </p>
+              </div>
+              <Select value={sortKey} onValueChange={(value) => setSortKey(value as SortKey)}>
+                <SelectTrigger className="w-52 rounded-xl border border-sky-200 bg-white text-slate-700" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border border-sky-200 bg-white text-slate-700">
+                  <SelectItem value="recent">Newest first</SelectItem>
+                  <SelectItem value="oldest">Oldest first</SelectItem>
+                  <SelectItem value="name">Name A–Z</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </Card>
 
-        {filtered.length > 0 ? (
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-lg font-semibold text-white">Your NFTs</h4>
-              <Button
-                variant="ghost"
-                className="rounded-xl border border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
-                onClick={() => router.push("/#mint")}
-              >
-                Mint more
-              </Button>
+        <section className="space-y-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="text-2xl text-slate-900" style={{ fontFamily: 'Chewy, system-ui, sans-serif' }}>
+                {hasResults ? "Explorer results" : "No NFTs yet"}
+              </h3>
+              <p className="text-sm text-slate-600" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                {hasResults
+                  ? "These entries update automatically once the World Chain MiniKit fetch is wired in."
+                  : "Connect your wallet or mint a buddy to populate the Explorer."}
+              </p>
             </div>
+          </div>
+
+          {isLoading ? (
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {filtered.map((nft) => (
+              {Array.from({ length: 3 }).map((_, index) => (
                 <div
+                  key={index}
+                  className="h-72 animate-pulse rounded-3xl border border-sky-100/60 bg-white/60"
+                />
+              ))}
+            </div>
+          ) : hasResults ? (
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {sortedNfts.map((nft) => (
+                <Card
                   key={nft.id}
-                  className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] shadow-[0_30px_60px_rgba(5,7,19,0.45)] transition hover:translate-y-[-2px] hover:bg-white/[0.06]"
+                  className="group overflow-hidden rounded-3xl border border-sky-100/70 bg-white/80 shadow-lg transition hover:-translate-y-1 hover:shadow-xl"
                 >
                   <div className="relative h-56 w-full overflow-hidden">
                     <img
@@ -254,42 +309,59 @@ function VaultContent() {
                       alt={nft.name}
                       className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/0 to-transparent" />
-                    <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm uppercase tracking-[0.28em] text-white/40">
-                          {nft.collection ?? nft.collectionName ?? "Collection"}
-                        </p>
-                        <h5 className="text-lg font-semibold text-white">{nft.name}</h5>
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-white to-transparent/40 py-4 px-5">
+                      <p className="text-xs uppercase tracking-[0.22em] text-slate-600" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                        {nft.collection || "Collection"}
+                      </p>
+                      <h4 className="text-lg text-slate-900" style={{ fontFamily: 'Chewy, system-ui, sans-serif' }}>
+                        {nft.name}
+                      </h4>
+                    </div>
+                  </div>
+                  <div className="space-y-4 p-5 text-sm text-slate-600" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                    {nft.description ? <p>{nft.description}</p> : null}
+                    <div className="grid gap-2 text-xs text-slate-500">
+                      <div className="flex items-center justify-between">
+                        <span>Owner</span>
+                        <span className="rounded-full bg-sky-100 px-3 py-1 text-slate-700">
+                          {nft.owner === "guest" ? "Guest" : formatWalletLabel(nft.owner)}
+                        </span>
                       </div>
-                      <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/70">
-                        {nft.owner === "guest"
-                          ? "Guest"
-                          : `${nft.owner?.slice(0, 4)}...${nft.owner?.slice(-4)}`}
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span>Minted</span>
+                        <span>{nft.timestamp ? new Date(nft.timestamp).toLocaleString() : "Unknown"}</span>
+                      </div>
+                      {nft.txHash ? (
+                        <div className="flex items-center justify-between">
+                          <span>Tx</span>
+                          <span className="truncate" title={nft.txHash}>
+                            {`${nft.txHash.slice(0, 6)}...${nft.txHash.slice(-4)}`}
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
-                  <div className="space-y-3 p-5 text-sm text-white/70">
-                    <p>{nft.description}</p>
-                    <div className="flex items-center justify-between text-xs text-white/40">
-                      <span>Minted</span>
-                      <span>
-                        {nft.timestamp
-                          ? new Date(nft.timestamp).toLocaleDateString()
-                          : "Unknown"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                </Card>
               ))}
             </div>
-          </section>
-        ) : (
-          <section className="mx-auto flex max-w-md flex-col items-center gap-6 text-center text-white/70">
-            <img src={EMPTY_IMG} alt="Empty shelf" className="w-full rounded-3xl border border-white/10" />
-            <p>No NFTs yet — mint your first friend and it will appear here.</p>
-          </section>
-        )}
+          ) : (
+            <div className="mx-auto flex max-w-md flex-col items-center gap-6 rounded-3xl border border-sky-100/70 bg-white/70 p-10 text-center">
+              <div className="grid h-16 w-16 place-items-center rounded-full border border-sky-100 bg-sky-50">
+                <Box className="h-7 w-7 text-sky-500" />
+              </div>
+              <p className="text-base text-slate-700" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                Your Explorer is waiting. Connect a wallet or mint your first buddy to see it populate.
+              </p>
+              <Button
+                className="rounded-full bg-sky-500 px-6 text-white hover:bg-sky-600"
+                style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}
+                onClick={() => router.push("/#mint")}
+              >
+                Mint your first NFT
+              </Button>
+            </div>
+          )}
+        </section>
       </div>
     </main>
   );
@@ -297,12 +369,14 @@ function VaultContent() {
 
 function VaultLoading() {
   return (
-    <main className="min-h-[calc(100dvh-64px)]">
-      <section className="mx-auto max-w-6xl px-4 py-10">
-        <div className="mb-6">
-          <h1 className="text-3xl sm:text-4xl" style={{ fontFamily: 'Chewy, system-ui, sans-serif' }}>Your NFT Vault</h1>
-          <p className="text-muted-foreground" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
-            Loading your magical collection...
+    <main className="min-h-[calc(100dvh-64px)] pb-16 pt-12">
+      <section className="mx-auto max-w-6xl px-4">
+        <div className="space-y-2">
+          <h1 className="text-3xl text-slate-900" style={{ fontFamily: 'Chewy, system-ui, sans-serif' }}>
+            Loading Explorer…
+          </h1>
+          <p className="text-sm text-slate-600" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+            Fetching your latest mints and preparing the vault view.
           </p>
         </div>
       </section>
@@ -310,8 +384,7 @@ function VaultLoading() {
   );
 }
 
-// Force dynamic rendering to avoid prerendering issues
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 
 export default function VaultPage() {
   return (

@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter as DialogFooterUI, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
@@ -40,9 +39,8 @@ export default function MintFirstNFT() {
   const router = useRouter();
   const [account, setAccount] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [name, setName] = useState("My First NFC.E");
+  const mintedName = "Nexplorer Genesis Buddy";
   const [open, setOpen] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const ownerLabel = useMemo(() => (account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Guest"), [account]);
 
@@ -80,13 +78,6 @@ export default function MintFirstNFT() {
     }
   };
 
-  const handleFile = (file?: File) => {
-    if (!file) return setImagePreview(null);
-    const reader = new FileReader();
-    reader.onload = () => setImagePreview(reader.result as string);
-    reader.readAsDataURL(file);
-  };
-
   const mint = async () => {
     setLoading(true);
     try {
@@ -94,8 +85,8 @@ export default function MintFirstNFT() {
       const owner = account ?? "guest";
       const newNFT = {
         id: `${Date.now()}`,
-        name: name.trim() || "My First NFC.E",
-        image: imagePreview || HERO_NFT_IMG,
+  name: mintedName,
+        image: HERO_NFT_IMG,
         description: "Your very first on-chain buddy (simulated). Welcome to the story!",
         txHash,
         owner,
@@ -104,7 +95,7 @@ export default function MintFirstNFT() {
       const nfts = readNFTs();
       nfts.push(newNFT as any);
       writeNFTs(nfts as any);
-      toast.success("Minted! Redirecting to your Vault...");
+  toast.success("Minted! Redirecting to your Explorer vault...");
       setOpen(false);
       router.push("/vault?justMinted=1");
     } finally {
@@ -113,62 +104,65 @@ export default function MintFirstNFT() {
   };
 
   return (
-    <Card className="rounded-2xl shadow-lg border border-border/60 bg-gradient-to-b from-card/80 to-card/60 backdrop-blur">
-      <CardHeader>
-        <CardTitle style={{ fontFamily: 'Chewy, system-ui, sans-serif' }}>Mint your first NFT</CardTitle>
-        <CardDescription className="text-base" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
-          Name your buddy, optionally add your own image, then mint. Connect MetaMask or mint as a friendly Guest.
+    <Card className="rounded-3xl shadow-xl border border-sky-200/70 bg-white/85 backdrop-blur">
+      <CardHeader className="text-center space-y-2">
+        <CardTitle className="text-sky-900 text-2xl" style={{ fontFamily: 'Chewy, system-ui, sans-serif' }}>Mint your first NFT</CardTitle>
+        <CardDescription className="text-base text-slate-600" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+          Mint serials of our shared hero artwork. Each click adds the next entry to your Explorer vault.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-4">
-        <div className="grid sm:grid-cols-[96px,1fr] gap-4 items-start">
-          <div className="relative h-24 w-24 rounded-xl overflow-hidden border bg-secondary/40">
-            <img src={imagePreview || HERO_NFT_IMG} alt="NFT preview" className="h-full w-full object-cover" />
-          </div>
-          <div className="grid gap-2">
-            <label className="text-sm">NFT Name</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name your buddy" />
-            <div className="grid gap-2 sm:grid-cols-2">
-              <div className="grid gap-1">
-                <label className="text-sm">NFT Image (optional)</label>
-                <Input type="file" accept="image/*" onChange={(e) => handleFile(e.target.files?.[0])} />
-              </div>
-              <p className="text-xs text-muted-foreground self-end">Owner: {ownerLabel}</p>
-            </div>
+      <CardContent className="grid gap-6">
+        <div className="relative mx-auto w-full max-w-sm">
+          <div className="absolute -inset-6 rounded-[2.5rem] bg-sky-200/50 blur-3xl" aria-hidden />
+          <div className="relative overflow-hidden rounded-[2rem] border border-sky-200 shadow-lg bg-white">
+            <img src={HERO_NFT_IMG} alt="Nexplorer hero" className="h-full w-full object-cover" />
           </div>
         </div>
-        <p className="text-xs text-muted-foreground" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
-          Tip: You can change the image later when you wire up your smart contract's tokenURI.
-        </p>
-      </CardContent>
-      <CardFooter className="flex flex-wrap gap-3">
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button disabled={loading}>Review & Mint</Button>
+            <Button
+              disabled={loading}
+              className="mx-auto w-full max-w-xs rounded-full bg-yellow-400 px-6 py-3 text-base font-semibold text-slate-900 shadow hover:bg-yellow-300"
+              style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}
+            >
+              Mint you first NFT
+            </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle style={{ fontFamily: 'Chewy, system-ui, sans-serif' }}>Confirm mint</DialogTitle>
               <DialogDescription style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
-                Please review your NFT details before minting. This is a simulated mint for onboarding.
+                Review your buddy before we add the next serial to your Explorer vault.
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-start gap-4">
-              <img src={imagePreview || HERO_NFT_IMG} alt="NFT preview" className="h-20 w-20 rounded-lg object-cover border" />
-              <div className="text-sm">
-                <div className="font-medium">Name</div>
-                <div className="mb-2">{name.trim() || "My First NFC.E"}</div>
-                <div className="font-medium">Owner</div>
+              <img src={HERO_NFT_IMG} alt="NFT preview" className="h-20 w-20 rounded-lg object-cover border" />
+              <div className="text-sm" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                <div className="font-medium text-slate-900">Name</div>
+                <div className="mb-2">{mintedName}</div>
+                <div className="font-medium text-slate-900">Owner</div>
                 <div className="text-muted-foreground">{ownerLabel}</div>
               </div>
             </div>
             <DialogFooterUI className="gap-2">
               <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button onClick={mint} disabled={loading}>{loading ? "Minting..." : "Mint Now"}</Button>
+              <Button onClick={mint} disabled={loading} className="bg-yellow-400 text-slate-900 hover:bg-yellow-300">
+                {loading ? "Minting..." : "Confirm mint"}
+              </Button>
             </DialogFooterUI>
           </DialogContent>
         </Dialog>
-        <Button variant="secondary" onClick={connect} disabled={!!account}>{account ? "Wallet Connected" : "Connect Wallet"}</Button>
+      </CardContent>
+      <CardFooter className="flex flex-col sm:flex-row items-center justify-end gap-4">
+        <Button
+          variant="secondary"
+          onClick={connect}
+          disabled={!!account}
+          className="w-full sm:w-auto border-sky-300 text-sky-800 hover:bg-sky-100"
+          style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}
+        >
+          {account ? "Wallet connected" : "Connect wallet"}
+        </Button>
       </CardFooter>
     </Card>
   );
