@@ -83,10 +83,10 @@ export default function HomePageContent() {
               </AccordionTrigger>
               <AccordionContent className="text-base sm:text-lg leading-relaxed text-slate-700" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
                 <p className="mb-3">
-                  "Minting" creates your NFT by writing its details to a blockchain. A wallet (like MetaMask) signs the action.
+                  "Minting" creates your NFT by writing its details to a blockchain. Instead of connecting a wallet here, we rely on World ID to prove you’re a unique human and simulate the transaction flow.
                 </p>
                 <p>
-                  We've made it beginner‑friendly. Try a simulated mint below — no jargon, just a simple flow to learn by doing.
+                  We've made it beginner‑friendly. Try a simulated mint below — no jargon, and no wallet setup required to learn by doing.
                 </p>
               </AccordionContent>
             </AccordionItem>

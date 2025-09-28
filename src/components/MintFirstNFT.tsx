@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter as DialogFooterUI, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { useWorldApp } from "@/context/WorldAppContext";
 
 const STORAGE_KEY = "storymint_nfts";
 const HERO_NFT_IMG = "https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/object/public/project-uploads/72578d18-4c28-4032-9a62-d9e4e894b6b4/generated_images/cute-storybook-style-collectible-card-fe-0bfb9cd9-20250927092450.jpg?";
@@ -16,7 +17,7 @@ type MintedNFT = {
   image: string;
   description: string;
   txHash: string;
-  owner: string; // wallet or "guest"
+  owner: string; // identity key or "guest"
   timestamp: number;
 };
 
@@ -37,55 +38,29 @@ function writeNFTs(nfts: MintedNFT[]) {
 
 export default function MintFirstNFT() {
   const router = useRouter();
-  const [account, setAccount] = useState<string | null>(null);
+  const { identityKey, verification, isVerified, verifyHuman, isVerifying } = useWorldApp();
   const [loading, setLoading] = useState(false);
   const mintedName = "Nexplorer Genesis Buddy";
   const [open, setOpen] = useState(false);
 
-  const ownerLabel = useMemo(() => (account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Guest"), [account]);
-
-  useEffect(() => {
-    // Try to eagerly fetch account if already connected
-    async function detect() {
-      const anyWindow = window as any;
-      if (anyWindow?.ethereum?.request) {
-        try {
-          const accs: string[] = await anyWindow.ethereum.request({ method: "eth_accounts" });
-          if (accs && accs.length > 0) setAccount(accs[0]);
-        } catch {
-          // ignore
-        }
+  const ownerLabel = useMemo(
+    () => {
+      if (isVerified && verification?.nullifierHash) {
+        return `Verified human · ${verification.nullifierHash.slice(0, 6)}...${verification.nullifierHash.slice(-4)}`;
       }
-    }
-    if (typeof window !== "undefined") detect();
-  }, []);
-
-  const connect = async () => {
-    const anyWindow = window as any;
-    if (!anyWindow?.ethereum?.request) {
-      toast.info("No wallet detected. You can still mint as a Guest!");
-      return;
-    }
-    try {
-      const accs: string[] = await anyWindow.ethereum.request({ method: "eth_requestAccounts" });
-      if (accs && accs.length > 0) {
-        setAccount(accs[0]);
-        toast.success("Wallet connected");
-      }
-    } catch (e) {
-      console.error(e);
-      toast.error("Could not connect wallet. You can mint as a Guest instead.");
-    }
-  };
+      return "Guest session";
+    },
+    [isVerified, verification?.nullifierHash]
+  );
 
   const mint = async () => {
     setLoading(true);
     try {
       const txHash = "0x" + Math.random().toString(16).slice(2).padEnd(64, "0");
-      const owner = account ?? "guest";
+      const owner = identityKey || "guest";
       const newNFT = {
         id: `${Date.now()}`,
-  name: mintedName,
+        name: mintedName,
         image: HERO_NFT_IMG,
         description: "Your very first on-chain buddy (simulated). Welcome to the story!",
         txHash,
@@ -95,7 +70,7 @@ export default function MintFirstNFT() {
       const nfts = readNFTs();
       nfts.push(newNFT as any);
       writeNFTs(nfts as any);
-  toast.success("Minted! Redirecting to your Explorer vault...");
+      toast.success("Minted! Redirecting to your Explorer vault...");
       setOpen(false);
       router.push("/vault?justMinted=1");
     } finally {
@@ -125,7 +100,7 @@ export default function MintFirstNFT() {
               className="mx-auto w-full max-w-xs rounded-full bg-yellow-400 px-6 py-3 text-base font-semibold text-slate-900 shadow hover:bg-yellow-300"
               style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}
             >
-              Mint you first NFT
+              Mint your first NFT
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-md">
@@ -156,12 +131,12 @@ export default function MintFirstNFT() {
       <CardFooter className="flex flex-col sm:flex-row items-center justify-end gap-4">
         <Button
           variant="secondary"
-          onClick={connect}
-          disabled={!!account}
+          onClick={() => verifyHuman({ signal: 'mint-first-nft' })}
+          disabled={isVerifying}
           className="w-full sm:w-auto border-sky-300 text-sky-800 hover:bg-sky-100"
           style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}
         >
-          {account ? "Wallet connected" : "Connect wallet"}
+          {isVerifying ? "Opening World App…" : isVerified ? "Re-open World ID" : "Verify with World ID"}
         </Button>
       </CardFooter>
     </Card>

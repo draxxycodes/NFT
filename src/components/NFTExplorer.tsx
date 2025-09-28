@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Search, Filter, Grid, List, TrendingUp, User, Wallet, Globe, Eye, Heart, ExternalLink } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Search, Filter, Grid, List, TrendingUp, User, Globe, Eye, Heart, ExternalLink, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +14,7 @@ import { NFT, Collection } from '@/lib/types';
 import { worldChainAPI } from '@/lib/worldchain-api';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { useWorldApp } from '@/context/WorldAppContext';
 
 type ViewMode = 'grid' | 'list';
 type SortOption = 'newest' | 'oldest' | 'name' | 'rarity';
@@ -24,11 +25,19 @@ export default function NFTExplorer() {
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNFT, setSelectedNFT] = useState<NFT | null>(null);
-  const [walletAddress, setWalletAddress] = useState('');
+  const [displayAddress, setDisplayAddress] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [sortBy, setSortBy] = useState<SortOption>('newest');
   const [selectedCollection, setSelectedCollection] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('explore');
+  const { isVerified, isVerifying, verifyHuman, verification } = useWorldApp();
+
+  const identityLabel = useMemo(() => {
+    if (isVerified && verification?.nullifierHash) {
+      return `Verified human · ${verification.nullifierHash.slice(0, 6)}...${verification.nullifierHash.slice(-4)}`;
+    }
+    return 'Guest session';
+  }, [isVerified, verification?.nullifierHash]);
 
   // Load trending collections on component mount
   useEffect(() => {
@@ -46,8 +55,13 @@ export default function NFTExplorer() {
   };
 
   const searchNFTs = async (address: string) => {
+    if (!isVerified) {
+      toast.error('Verify with World ID to search on-chain addresses.');
+      return;
+    }
+
     if (!address.trim()) {
-      toast.error('Please enter a wallet address');
+      toast.error('Please enter a World Chain address or contract');
       return;
     }
 
@@ -55,7 +69,7 @@ export default function NFTExplorer() {
     try {
       const userNFTs = await worldChainAPI.getNFTsByOwner(address);
       setNfts(userNFTs);
-      setWalletAddress(address);
+      setDisplayAddress(address);
       setActiveTab('collection');
       toast.success(`Found ${userNFTs.length} NFTs`);
     } catch (error) {
@@ -67,6 +81,11 @@ export default function NFTExplorer() {
   };
 
   const loadCollectionNFTs = async (contractAddress: string) => {
+    if (!isVerified) {
+      toast.error('Verify with World ID to load collection results.');
+      return;
+    }
+
     setLoading(true);
     try {
       const collectionNFTs = await worldChainAPI.getNFTsByCollection(contractAddress);
@@ -110,6 +129,8 @@ export default function NFTExplorer() {
     new Map(nfts.map(nft => [nft.contractAddress, nft.collection])).values()
   ).filter(Boolean);
 
+  const combinedLoading = loading;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       <div className="container mx-auto px-4 py-8">
@@ -140,13 +161,35 @@ export default function NFTExplorer() {
             </div>
           </div>
 
+          <div className="mb-6 rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3 text-sm text-gray-200">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500/20">
+                  <ShieldCheck className="h-5 w-5 text-blue-300" />
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-blue-200/90">World ID gating</p>
+                  <p className="font-medium text-white">{identityLabel}</p>
+                  <p className="text-xs text-gray-300">Unique humans unlock address search and collection results.</p>
+                </div>
+              </div>
+              <Button
+                onClick={() => verifyHuman({ signal: 'nft-explorer' })}
+                disabled={isVerifying}
+                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {isVerifying ? 'Opening World App…' : isVerified ? 'Re-open World ID' : 'Verify with World ID'}
+              </Button>
+            </div>
+          </div>
+
           {/* Search and Filters */}
           <div className="flex flex-col md:flex-row gap-4 mb-6">
             <div className="flex-1">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                 <Input
-                  placeholder="Search by wallet address (0x...)"
+                  placeholder="Search by on-chain address (0x...)"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-gray-400"
@@ -172,7 +215,7 @@ export default function NFTExplorer() {
               className="text-white border-white/20 hover:bg-white/10"
             >
               <User className="h-3 w-3 mr-1" />
-              Demo Wallet 1
+              Demo Address 1
             </Button>
             <Button
               variant="outline"
@@ -181,7 +224,7 @@ export default function NFTExplorer() {
               className="text-white border-white/20 hover:bg-white/10"
             >
               <User className="h-3 w-3 mr-1" />
-              Demo Wallet 2
+              Demo Address 2
             </Button>
           </div>
         </div>
@@ -194,8 +237,8 @@ export default function NFTExplorer() {
               Trending Collections
             </TabsTrigger>
             <TabsTrigger value="collection" className="text-white">
-              <Wallet className="h-4 w-4 mr-2" />
-              Your NFTs ({nfts.length})
+              <Grid className="h-4 w-4 mr-2" />
+              Collection Results ({nfts.length})
             </TabsTrigger>
           </TabsList>
 
@@ -270,7 +313,7 @@ export default function NFTExplorer() {
               </div>
             )}
 
-            {loading ? (
+            {combinedLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
               </div>
@@ -295,14 +338,14 @@ export default function NFTExplorer() {
                   <Globe className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-white mb-2">No NFTs Found</h3>
                   <p className="text-gray-400">
-                    {walletAddress 
-                      ? 'This wallet doesn\'t own any NFTs on World Chain.' 
-                      : 'Enter a wallet address to explore NFTs.'
+                    {displayAddress 
+                      ? 'No NFTs found for this address on World Chain.' 
+                      : 'Verify with World ID, then enter an address to explore NFTs.'
                     }
                   </p>
                 </div>
                 <Button onClick={() => searchNFTs('0x742d35Cc6634C0532925a3b8D9c9084dbC27A95b')} className="bg-blue-600 hover:bg-blue-700">
-                  Try Demo Wallet
+                  Try Demo Address
                 </Button>
               </div>
             )}

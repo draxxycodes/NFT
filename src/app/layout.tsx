@@ -5,6 +5,7 @@ import VisualEditsMessenger from "../visual-edits/VisualEditsMessenger";
 import ErrorReporter from "@/components/ErrorReporter";
 import Script from "next/script";
 import { Toaster } from "@/components/ui/sonner";
+import { WorldAppProvider } from "@/context/WorldAppContext";
 
 export const metadata: Metadata = {
   title: "Nexplorer | Your First NFT Adventure",
@@ -19,7 +20,8 @@ export default function RootLayout({
   return (
     <html lang="en" className="scroll-smooth">
       <body className="antialiased bg-[radial-gradient(circle_at_20%_20%,#e0f2ff,rgba(255,255,255,0)) ,radial-gradient(circle_at_80%_0%,#c9e6ff,rgba(255,255,255,0.3)) ,linear-gradient(180deg,#f4fbff_0%,#ffffff_60%,#e6f4ff_100%)] text-slate-900">
-        <div className="relative min-h-screen">
+        <WorldAppProvider>
+          <div className="relative min-h-screen">
           <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(600px_400px_at_20%_10%,rgba(14,165,233,0.12),transparent),radial-gradient(500px_500px_at_80%_20%,rgba(59,130,246,0.1),transparent)]" />
           <header className="sticky top-0 z-40 backdrop-blur border-b border-sky-200/60 bg-sky-100/70">
             <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
@@ -51,7 +53,8 @@ export default function RootLayout({
           <main>{children}</main>
           <VisualEditsMessenger />
           <Toaster richColors position="top-center" />
-        </div>
+          </div>
+        </WorldAppProvider>
       </body>
     </html>
   );

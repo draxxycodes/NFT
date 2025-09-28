@@ -4,11 +4,17 @@ export const WORLD_CONFIG = {
   WORLD_CHAIN_RPC: 'https://worldchain-mainnet.g.alchemy.com/v2/2K2RW2ZGDMX4BV7VUBYCMME1TPRF61QRRV',
   WORLD_CHAIN_ID: 480, // World Chain mainnet
   
-  // MiniKit App ID (you'll need to replace this with your actual app ID)
-  MINIKIT_APP_ID: 'app_staging_your_app_id',
+  // MiniKit App ID (must be provided via environment variables)
+  MINIKIT_APP_ID:
+    (typeof process !== 'undefined' &&
+      (process.env.NEXT_PUBLIC_MINIKIT_APP_ID || process.env.MINIKIT_APP_ID)) ||
+    '',
+  MINIKIT_VERIFY_ACTION:
+    (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_MINIKIT_VERIFY_ACTION_ID) ||
+    '',
   
   // Public URL (used for deep links). Prefer env, fallback to ngrok.
-  PUBLIC_URL: (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BASE_URL) || 'https://a219b02c4939.ngrok-free.app',
+  PUBLIC_URL: (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_BASE_URL) || 'https://a16ded840520.ngrok-free.app',
   WORLD_APP_DEEPLINK_PREFIX: 'worldapp://mini-app?url=',
   
   // NFT Contract addresses on World Chain

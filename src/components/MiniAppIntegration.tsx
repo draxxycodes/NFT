@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Smartphone, Globe, Shield, Wallet, ExternalLink } from 'lucide-react';
+import { Smartphone, Globe, ExternalLink } from 'lucide-react';
 import { WORLD_CONFIG } from '@/lib/types';
 
 // World App Mini App integration
@@ -23,7 +23,6 @@ interface MiniAppStatus {
   features: {
     worldID: boolean;
     payments: boolean;
-    wallet: boolean;
     notifications: boolean;
   };
 }
@@ -35,7 +34,6 @@ export function MiniAppIntegration() {
     features: {
       worldID: false,
       payments: false,
-      wallet: false,
       notifications: false,
     }
   });
@@ -62,7 +60,6 @@ export function MiniAppIntegration() {
       features: {
         worldID: isInWorldApp || canUseMiniKit,
         payments: isInWorldApp || canUseMiniKit,
-        wallet: isInWorldApp || canUseMiniKit,
         notifications: isInWorldApp || canUseMiniKit,
       }
     });
@@ -129,15 +126,6 @@ export function MiniAppIntegration() {
             setLoading(false);
           }, 2000);
           break;
-          
-        case 'wallet':
-          // Simulate wallet connection
-          setTimeout(() => {
-            toast.success('Wallet connected successfully! (Demo)');
-            setLoading(false);
-          }, 1500);
-          break;
-          
         case 'payments':
           // Simulate payment
           setTimeout(() => {

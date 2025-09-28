@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { Box, Grid3X3, Loader2 } from "lucide-react";
+import { useWorldApp } from "@/context/WorldAppContext";
+import type { WorldIDVerification } from "@/lib/types";
 
 const STORAGE_KEY = "storymint_nfts";
 
@@ -29,46 +31,50 @@ type ExplorerNFT = {
 
 type SortKey = "recent" | "oldest" | "name";
 
-async function fetchWalletNfts(address: string | null): Promise<ExplorerNFT[]> {
+async function fetchIdentityMints(identityKey: string): Promise<ExplorerNFT[]> {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     const stored = raw ? (JSON.parse(raw) as ExplorerNFT[]) : [];
-    if (!address) {
-      return stored.filter((item) => (item.owner ?? "").toLowerCase() === "guest");
-    }
-    const normalized = address.toLowerCase();
-    return stored.filter((item) => (item.owner ?? "").toLowerCase() === normalized);
+    const key = (identityKey || "guest").toLowerCase();
+    return stored.filter((item) => (item.owner ?? "").toLowerCase() === key);
   } catch (error) {
     console.error("Failed to read local NFTs", error);
     return [];
   }
 }
 
-function formatWalletLabel(address: string | null) {
-  if (!address) return "Guest session (local mints)";
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+function formatIdentityLabel(isVerified: boolean, verification: WorldIDVerification | null) {
+  if (isVerified && verification?.nullifierHash) {
+    return `Verified human · ${verification.nullifierHash.slice(0, 6)}...${verification.nullifierHash.slice(-4)}`;
+  }
+  return "Guest session (local mints)";
+}
+
+function formatOwnerTag(owner: string) {
+  if (!owner || owner.toLowerCase() === "guest") {
+    return "Guest";
+  }
+  return `Human · ${owner.slice(0, 6)}...${owner.slice(-4)}`;
 }
 
 function VaultContent() {
   const params = useSearchParams();
   const router = useRouter();
-  const [account, setAccount] = useState<string | null>(null);
-  const [nfts, setNfts] = useState<ExplorerNFT[]>([]);
+  const { identityKey, verification, isVerified, verifyHuman, isVerifying } = useWorldApp();
+  const [localMints, setLocalMints] = useState<ExplorerNFT[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("recent");
 
-  const loadNfts = useCallback(async (address: string | null) => {
+  const loadLocalMints = useCallback(async (key: string) => {
     setIsLoading(true);
     try {
-      // When the World Chain MiniKit is wired in, replace this call with the remote fetcher.
-      const data = await fetchWalletNfts(address);
-      setNfts(data);
+      const data = await fetchIdentityMints(key);
+      setLocalMints(data);
     } catch (error) {
       console.error("Unable to load NFTs", error);
-      toast.error("We couldn\'t load your NFTs. Please try again.");
-      setNfts([]);
+      toast.error("We couldn't load your NFTs. Please try again.");
+      setLocalMints([]);
     } finally {
       setIsLoading(false);
     }
@@ -78,73 +84,17 @@ function VaultContent() {
     const queryFlag = params.get("justMinted");
     if (queryFlag === "1") {
       toast.success("Your mint has been added to the Explorer.");
-      loadNfts(account);
     }
-  }, [account, loadNfts, params]);
+    loadLocalMints(identityKey);
+  }, [identityKey, loadLocalMints, params]);
 
-  useEffect(() => {
-    loadNfts(account);
-  }, [account, loadNfts]);
-
-  useEffect(() => {
-    const anyWindow = window as any;
-    async function detectExisting() {
-      if (!anyWindow?.ethereum?.request) {
-        await loadNfts(null);
-        return;
-      }
-      try {
-        const accs: string[] = await anyWindow.ethereum.request({ method: "eth_accounts" });
-        if (accs && accs.length > 0) {
-          setAccount(accs[0]);
-        } else {
-          await loadNfts(null);
-        }
-      } catch (error) {
-        console.error("Wallet detection failed", error);
-        await loadNfts(null);
-      }
-    }
-    void detectExisting();
-  }, [loadNfts]);
-
-  const connectWallet = useCallback(async () => {
-    const anyWindow = window as any;
-    if (!anyWindow?.ethereum?.request) {
-      toast.info("No compatible wallet found. World ID connection will be available soon.");
-      return;
-    }
-    setIsConnecting(true);
-    try {
-      const accounts: string[] = await anyWindow.ethereum.request({ method: "eth_requestAccounts" });
-      if (!accounts?.length) {
-        toast.info("Wallet connection was closed.");
-        return;
-      }
-      const primary = accounts[0];
-      setAccount(primary);
-      toast.success("Wallet connected");
-    } catch (error) {
-      console.error("Wallet connection failed", error);
-      toast.error("Could not connect the wallet. Please try again.");
-    } finally {
-      setIsConnecting(false);
-    }
-  }, []);
-
-  const refreshNfts = useCallback(async () => {
-    await loadNfts(account);
+  const refreshMints = useCallback(async () => {
+    await loadLocalMints(identityKey);
     toast.success("Explorer refreshed");
-  }, [account, loadNfts]);
-
-  const disconnectWallet = useCallback(async () => {
-    setAccount(null);
-    await loadNfts(null);
-    toast.info("Disconnected. Showing guest session mints.");
-  }, [loadNfts]);
+  }, [identityKey, loadLocalMints]);
 
   const sortedNfts = useMemo(() => {
-    const data = [...nfts];
+    const data = [...localMints];
     switch (sortKey) {
       case "name":
         return data.sort((a, b) => a.name.localeCompare(b.name));
@@ -154,14 +104,14 @@ function VaultContent() {
       default:
         return data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     }
-  }, [nfts, sortKey]);
+  }, [localMints, sortKey]);
 
   const stats = useMemo(() => {
-    const total = nfts.length;
+    const total = localMints.length;
     const collections = new Set(
-      nfts.map((item) => item.collection || "Uncategorized")
+      localMints.map((item) => item.collection || "Uncategorized")
     );
-    const lastTimestamp = nfts.reduce(
+    const lastTimestamp = localMints.reduce(
       (acc, item) => Math.max(acc, Number(item.timestamp) || 0),
       0
     );
@@ -170,9 +120,10 @@ function VaultContent() {
       collections: collections.size,
       lastUpdated: lastTimestamp ? new Date(lastTimestamp).toLocaleString() : "—",
     };
-  }, [nfts]);
+  }, [localMints]);
 
   const hasResults = sortedNfts.length > 0;
+  const isFetching = isLoading;
 
   return (
     <main className="min-h-[100dvh] pb-16 pt-12">
@@ -198,41 +149,52 @@ function VaultContent() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.22em] text-sky-600/80" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
-                  Connected wallet
+                  Identity scope
                 </p>
                 <h2 className="mt-1 text-2xl text-slate-900" style={{ fontFamily: 'Chewy, system-ui, sans-serif' }}>
-                  {formatWalletLabel(account)}
+                  {formatIdentityLabel(isVerified, verification)}
                 </h2>
                 <p className="mt-1 text-sm text-slate-600" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
-                  NFTs load automatically after a successful World ID / wallet connection. You can refresh anytime as you integrate the World Chain MiniKit.
+                  World ID keeps your Explorer scoped to a single human. Minting as a guest stores entries locally on this device.
+                </p>
+                <p className="mt-1 text-xs text-slate-500" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
+                  {isVerified
+                    ? "Verification active. Refresh to sync your latest story mints."
+                    : "Verify with World ID to unlock human-gated drops and reuse your Explorer anywhere."}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
-                {account ? (
-                  <Button
-                    variant="secondary"
-                    className="rounded-full border border-sky-200 bg-sky-50 px-5 text-sky-800 hover:bg-sky-100"
-                    style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}
-                    onClick={disconnectWallet}
-                  >
-                    Disconnect
-                  </Button>
-                ) : null}
+                <Button
+                  variant="secondary"
+                  className="rounded-full border border-sky-200 bg-sky-50 px-5 text-sky-800 hover:bg-sky-100"
+                  style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}
+                  onClick={() => verifyHuman({ signal: 'vault' })}
+                  disabled={isVerifying}
+                >
+                  {isVerifying ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Opening World App…
+                    </span>
+                  ) : isVerified ? (
+                    "Re-open World ID"
+                  ) : (
+                    "Verify with World ID"
+                  )}
+                </Button>
                 <Button
                   className="rounded-full bg-yellow-400 px-6 text-slate-900 hover:bg-yellow-300"
                   style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}
-                  onClick={account ? refreshNfts : connectWallet}
-                  disabled={isConnecting}
+                  onClick={refreshMints}
+                  disabled={isFetching}
                 >
-                  {isConnecting ? (
+                  {isFetching ? (
                     <span className="flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Connecting
+                      Refreshing
                     </span>
-                  ) : account ? (
-                    "Refresh NFTs"
                   ) : (
-                    "Connect wallet"
+                    "Refresh Explorer"
                   )}
                 </Button>
               </div>
@@ -281,13 +243,13 @@ function VaultContent() {
               </h3>
               <p className="text-sm text-slate-600" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
                 {hasResults
-                  ? "These entries update automatically once the World Chain MiniKit fetch is wired in."
-                  : "Connect your wallet or mint a buddy to populate the Explorer."}
+                  ? "These entries update automatically for your current identity. Refresh after minting to keep the story in sync."
+                  : "Verify with World ID or mint a buddy to populate the Explorer."}
               </p>
             </div>
           </div>
 
-          {isLoading ? (
+          {isFetching ? (
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 3 }).map((_, index) => (
                 <div
@@ -324,7 +286,7 @@ function VaultContent() {
                       <div className="flex items-center justify-between">
                         <span>Owner</span>
                         <span className="rounded-full bg-sky-100 px-3 py-1 text-slate-700">
-                          {nft.owner === "guest" ? "Guest" : formatWalletLabel(nft.owner)}
+                          {formatOwnerTag(nft.owner)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
@@ -350,7 +312,7 @@ function VaultContent() {
                 <Box className="h-7 w-7 text-sky-500" />
               </div>
               <p className="text-base text-slate-700" style={{ fontFamily: 'Short Stack, system-ui, sans-serif' }}>
-                Your Explorer is waiting. Connect a wallet or mint your first buddy to see it populate.
+                Your Explorer is waiting. Verify with World ID or mint your first buddy to see it populate.
               </p>
               <Button
                 className="rounded-full bg-sky-500 px-6 text-white hover:bg-sky-600"

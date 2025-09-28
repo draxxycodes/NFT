@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   
   if (!address) {
     return NextResponse.json(
-      { error: 'Wallet address is required' },
+      { error: 'World Chain address is required' },
       { status: 400 }
     );
   }
@@ -62,12 +62,17 @@ export async function POST(request: NextRequest) {
       })
     );
 
+    const total = results.reduce((acc: number, result) => {
+      if (result.success && Array.isArray(result.nfts)) {
+        return acc + result.nfts.length;
+      }
+      return acc;
+    }, 0);
+
     return NextResponse.json({
       success: true,
       data: results,
-      total: results.reduce((acc, result) => 
-        result.success ? acc + result.nfts.length : acc, 0
-      ),
+      total,
     });
   } catch (error) {
     console.error('Error in batch NFT fetch:', error);
